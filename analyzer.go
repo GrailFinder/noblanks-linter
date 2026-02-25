@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/token"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -15,14 +17,46 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
+	if len(pass.Files) == 0 {
+		return nil, nil
+	}
+
+	baseDir := getBaseDir(pass)
+
 	for _, f := range pass.Files {
-		checkFile(pass, f)
+		checkFile(pass, f, baseDir)
 	}
 	return nil, nil
 }
 
-func checkFile(pass *analysis.Pass, f *ast.File) {
+func getBaseDir(pass *analysis.Pass) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		if len(pass.Files) == 0 {
+			return ""
+		}
+		pos := pass.Fset.Position(pass.Files[0].Name.Pos())
+		return filepath.Dir(pos.Filename)
+	}
+	return cwd
+}
+
+func makeRel(filename, baseDir string) string {
+	rel, err := filepath.Rel(baseDir, filename)
+	if err != nil {
+		return filename
+	}
+	return rel
+}
+
+func checkFile(pass *analysis.Pass, f *ast.File, baseDir string) {
 	fset := pass.Fset
+	filename := fset.Position(f.Name.Pos()).Filename
+
+	if !isInBaseDir(filename, baseDir) {
+		return
+	}
+
 	ast.Inspect(f, func(n ast.Node) bool {
 		var body *ast.BlockStmt
 		var funcName string
@@ -41,12 +75,24 @@ func checkFile(pass *analysis.Pass, f *ast.File) {
 		if body == nil || len(body.List) == 0 {
 			return true
 		}
-		checkBody(pass, fset, body, funcName)
+		checkBody(pass, fset, body, funcName, baseDir)
 		return true
 	})
 }
 
-func checkBody(pass *analysis.Pass, fset *token.FileSet, body *ast.BlockStmt, funcName string) {
+func isInBaseDir(filename, baseDir string) bool {
+	absFilename, err := filepath.Abs(filename)
+	if err != nil {
+		return false
+	}
+	absBaseDir, err := filepath.Abs(baseDir)
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(absFilename, absBaseDir)
+}
+
+func checkBody(pass *analysis.Pass, fset *token.FileSet, body *ast.BlockStmt, funcName, baseDir string) {
 	stmts := body.List
 	for i := 0; i < len(stmts)-1; i++ {
 		pos1 := stmts[i].End()
@@ -54,6 +100,9 @@ func checkBody(pass *analysis.Pass, fset *token.FileSet, body *ast.BlockStmt, fu
 		posInfo1 := fset.Position(pos1)
 		posInfo2 := fset.Position(pos2)
 		if posInfo1.Filename != posInfo2.Filename {
+			continue
+		}
+		if !isInBaseDir(posInfo1.Filename, baseDir) {
 			continue
 		}
 		if posInfo2.Line-posInfo1.Line <= 1 {
@@ -64,7 +113,8 @@ func checkBody(pass *analysis.Pass, fset *token.FileSet, body *ast.BlockStmt, fu
 			continue
 		}
 		if hasBlankLine(file, posInfo1.Line+1, posInfo2.Line-1) {
-			pass.Reportf(pos2, "blank lines inside function body (%s)", funcName)
+			relPath := makeRel(posInfo2.Filename, baseDir)
+			pass.Reportf(token.NoPos, "%s:%d:%d: blank lines inside function body (%s)", relPath, posInfo2.Line, posInfo2.Column, funcName)
 		}
 	}
 }
