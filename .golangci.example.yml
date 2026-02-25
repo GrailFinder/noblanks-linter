@@ -1,0 +1,27 @@
+# Example .golangci.yml configuration for no-blanks-linter
+#
+# This requires golangci-lint v2.0+ with custom module support
+#
+# Usage:
+# 1. Add this config to your project's .golangci.yml
+# 2. Create .custom-gcl.yml with:
+#    version: v2.0.0
+#    plugins:
+#      - module: github.com/GrailFinder/noblanks-linter
+#        import: github.com/GrailFinder/noblanks-linter
+#        version: v0.1.0
+# 3. Run: golangci-lint custom run ./...
+
+version: "2"
+
+linters:
+  disable-all: true
+  enable:
+    - noblanks
+
+linters-settings:
+  custom:
+    noblanks:
+      type: module
+      description: "Reports blank lines inside function bodies"
+      settings: {}
