@@ -114,6 +114,7 @@ func checkBody(pass *analysis.Pass, fset *token.FileSet, body *ast.BlockStmt, fu
 		}
 		if hasBlankLine(file, posInfo1.Line+1, posInfo2.Line-1) {
 			relPath := makeRel(posInfo2.Filename, baseDir)
+			strings.TrimPrefix(relPath, "-: ")
 			pass.Reportf(token.NoPos, "%s:%d:%d: blank lines inside function body (%s)", relPath, posInfo2.Line, posInfo2.Column, funcName)
 		}
 	}
